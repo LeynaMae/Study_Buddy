@@ -1,446 +1,157 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Study Buddy</title>
-  <meta name="description" content="A simple, motivating study timer that awards points for time spent studying." />
-  <style>
-    :root {
-      --bg: #0f172a;          /* slate-900 */
-      --panel: #111827;       /* gray-900 */
-      --panel-2: #0b1220;     /* deep shade */
-      --text: #e5e7eb;        /* gray-200 */
-      --muted: #9ca3af;       /* gray-400 */
-      --accent: #6366f1;      /* indigo-500 */
-      --accent-2: #22d3ee;    /* cyan-400 */
-      --success: #10b981;     /* emerald-500 */
-      --warn: #f59e0b;        /* amber-500 */
-      --danger: #ef4444;      /* red-500 */
-      --shadow: 0 10px 25px rgba(0,0,0,.35);
-      --radius: 16px;
+// --- Study Help Logic ---
+const tabButtons = document.querySelectorAll('.tabs .btn');
+const panels = {
+  plan: document.getElementById('panel-plan'),
+  flashcards: document.getElementById('panel-flashcards'),
+  quicksolve: document.getElementById('panel-quicksolve')
+};
+tabButtons.forEach(btn => btn.addEventListener('click', () => {
+  const tab = btn.getAttribute('data-tab');
+  tabButtons.forEach(b => b.setAttribute('aria-selected', String(b===btn)));
+  Object.entries(panels).forEach(([k,el]) => el.hidden = (k!==tab));
+}));
+
+// Planner
+const makePlanBtn = document.getElementById('makePlanBtn');
+const planOutput = document.getElementById('planOutput');
+makePlanBtn?.addEventListener('click', () => {
+  const subj = document.getElementById('planSubject').value.trim() || 'Study';
+  const due = document.getElementById('planDue').value;
+  const minutes = Math.max(15, Number(document.getElementById('planMinutes').value)||60);
+  const desc = document.getElementById('planDesc').value.trim();
+
+  // Allocate time across phases
+  const phases = [
+    ['Understand the task', .15],
+    ['Gather sources / examples', .20],
+    ['Outline key points', .20],
+    ['Draft / Solve', .30],
+    ['Review & polish', .10],
+    ['Submit / backup files', .05]
+  ];
+  const items = phases.map(([label, frac]) => {
+    const mins = Math.max(5, Math.round(minutes*frac));
+    return { label, mins };
+  });
+
+  planOutput.innerHTML = '';
+  const dueTxt = due ? ` (due ${new Date(due).toLocaleString()})` : '';
+  const header = document.createElement('li');
+  header.innerHTML = `<strong>${subj}${dueTxt}</strong>${desc?': '+desc:''}`;
+  planOutput.appendChild(header);
+  for (const it of items) {
+    const li = document.createElement('li');
+    li.innerHTML = `${it.label} — <strong>${it.mins} min</strong>`;
+    planOutput.appendChild(li);
+  }
+  showToast('Plan created. You got this! 🦉');
+});
+
+// Flashcards
+const genCardsBtn = document.getElementById('genCardsBtn');
+const downloadCardsBtn = document.getElementById('downloadCardsBtn');
+const cardsWrap = document.getElementById('cardsWrap');
+
+function sentenceSplit(text){
+  return text
+    .replace(/\n+/g,' ')
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+function toCloze(sentence){
+  // Pick a keyword: longest word >=4 letters
+  const words = sentence.match(/\b[\p{L}]{4,}\b/gu) || [];
+  const key = words.sort((a,b)=>b.length-a.length)[0] || null;
+  if (!key) return {q: sentence, a: ''};
+  const re = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i');
+  return { q: sentence.replace(re,'_____'), a: key };
+}
+
+genCardsBtn?.addEventListener('click', () => {
+  const raw = document.getElementById('fcInput').value.trim();
+  cardsWrap.innerHTML='';
+  if (!raw) { showToast('Paste notes to make cards.'); return; }
+
+  const lines = raw.split(/\n/).map(l=>l.trim()).filter(Boolean);
+  const pairs = [];
+  for (const line of lines) {
+    if (line.includes('::')) {
+      const [q,a] = line.split('::');
+      if (q && a) pairs.push({q:q.trim(), a:a.trim()});
+      continue;
     }
+    for (const s of sentenceSplit(line)) pairs.push(toCloze(s));
+  }
 
-    @media (prefers-color-scheme: light) {
-      :root {
-        --bg: #f8fafc;          /* slate-50 */
-        --panel: #ffffff;        /* white */
-        --panel-2: #f1f5f9;      /* slate-100 */
-        --text: #0f172a;         /* slate-900 */
-        --muted: #475569;        /* slate-600 */
-        --shadow: 0 10px 25px rgba(2,6,23,.08);
-      }
+  for (const p of pairs.slice(0,200)) {
+    const card = document.createElement('div');
+    card.className = 'flashcard';
+    card.innerHTML = `
+      <strong>Front</strong>
+      <textarea>${p.q}</textarea>
+      <strong>Back</strong>
+      <textarea>${p.a}</textarea>
+    `;
+    cardsWrap.appendChild(card);
+  }
+  showToast(`Made ${pairs.length} cards.`);
+});
+
+downloadCardsBtn?.addEventListener('click', () => {
+  const cards = [...cardsWrap.querySelectorAll('.flashcard')].map(card => {
+    const t = card.querySelectorAll('textarea');
+    return { q: t[0].value, a: t[1].value };
+  });
+  if (!cards.length) { showToast('No cards to download.'); return; }
+  const header = ['Front','Back'];
+  const rows = cards.map(c => [c.q, c.a]);
+  const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'study-buddy-flashcards.csv'; a.click();
+  URL.revokeObjectURL(url);
+});
+
+// Quick Solve (very lightweight)
+const qsRunBtn = document.getElementById('qsRunBtn');
+const qsOutput = document.getElementById('qsOutput');
+
+function isSafeExpression(str){
+  return /^[0-9+\-*/().^%\s]+$/.test(str);
+}
+function evalMath(expr){
+  // convert ^ to ** for exponent
+  const safe = expr.replace(/\^/g,'**');
+  // Use Function for isolated eval of math
+  return Function(`"use strict"; return (${safe});`)();
+}
+
+qsRunBtn?.addEventListener('click', () => {
+  const text = document.getElementById('qsProblem').value.trim();
+  if (!text) { showToast('Type a problem or task.'); return; }
+
+  // Math branch
+  if (isSafeExpression(text)) {
+    try {
+      const result = evalMath(text);
+      qsOutput.innerHTML = `<div class="cardlet"><strong>Result:</strong> ${result}</div>
+      <div class="cardlet" style="margin-top:8px"><strong>Steps (tips):</strong><br/>• Expand parentheses first<br/>• Exponents next<br/>• Multiply/Divide left to right<br/>• Add/Subtract last</div>`;
+    } catch(e){
+      qsOutput.textContent = 'Could not evaluate expression.';
     }
+    return;
+  }
 
-    * { box-sizing: border-box; }
-    html, body { height: 100%; }
-    body {
-      margin: 0; font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-      background: radial-gradient(1200px 800px at 10% 10%, var(--panel-2), transparent),
-                  radial-gradient(1200px 800px at 90% 0%, rgba(34,211,238,.12), transparent),
-                  linear-gradient(180deg, var(--bg), var(--bg));
-      color: var(--text);
-      display: grid; place-items: start center;
-    }
-
-    .wrap { width: min(1100px, 100%); padding: 32px 20px 56px; }
-
-    header {
-      display: flex; align-items: center; gap: 16px; justify-content: space-between; flex-wrap: wrap;
-      margin-bottom: 20px;
-    }
-    .brand { display:flex; align-items:center; gap:12px; }
-    .logo {
-      width: 44px; height: 44px; border-radius: 12px; background:
-        conic-gradient(from 200deg, var(--accent), var(--accent-2));
-      display:grid; place-items:center; color:white; font-weight: 800;
-      box-shadow: var(--shadow);
-    }
-    .title { font-weight: 800; letter-spacing: .2px; font-size: clamp(20px, 2.6vw, 28px); }
-    .subtitle { color: var(--muted); font-size: 14px; }
-
-    .grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 18px; }
-    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-
-    .card { background: var(--panel); border: 1px solid rgba(148,163,184,.12); border-radius: var(--radius); box-shadow: var(--shadow); overflow: clip; }
-    .card h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: .2px; }
-    .card .inner { padding: 18px; }
-
-    /* Timer panel */
-    .timer {
-      display: grid; grid-template-columns: 1fr; align-items: center;
-      text-align: center; gap: 14px; padding: 22px 18px 26px;
-      background: linear-gradient(180deg, rgba(99,102,241,.12), transparent 60%);
-    }
-    .time {
-      font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: .5px;
-      font-size: clamp(34px, 8vw, 72px);
-    }
-    .points { display:flex; gap:10px; justify-content:center; align-items: baseline; }
-    .points .value { font-weight: 800; font-size: clamp(18px,4vw,28px); }
-    .points .label { color: var(--muted); font-size: 13px; }
-
-    .controls { display:flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
-    .btn {
-      border: 0; border-radius: 999px; padding: 10px 16px; font-weight: 700; cursor: pointer;
-      background: #111827; color: var(--text); border: 1px solid rgba(148,163,184,.16);
-      transition: transform .06s ease, background .2s ease, border-color .2s ease; user-select: none;
-    }
-    .btn:hover { transform: translateY(-1px); }
-    .btn:active { transform: translateY(0); }
-    .btn.primary { background: linear-gradient(180deg, var(--accent), #4f46e5); color: white; border-color: transparent; }
-    .btn.success { background: linear-gradient(180deg, var(--success), #059669); color:white; border-color: transparent; }
-    .btn.warn { background: linear-gradient(180deg, var(--warn), #d97706); color:white; border-color: transparent; }
-    .btn.ghost { background: transparent; }
-
-    .progress {
-      width: 100%; height: 10px; border-radius: 999px; background: rgba(148,163,184,.18); overflow: hidden;
-    }
-    .bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .2s linear; }
-
-    .settings-row { display:flex; gap: 10px; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; }
-    select, input[type="number"] {
-      background: #0b1220; color: var(--text); border: 1px solid rgba(148,163,184,.22);
-      border-radius: 10px; padding: 8px 10px;
-    }
-    @media (prefers-color-scheme: light) {
-      select, input[type="number"] { background: #fff; }
-    }
-
-    /* Right column */
-    .statline { display:flex; gap: 14px; align-items: center; flex-wrap: wrap; }
-    .pill { padding: 6px 10px; border-radius: 999px; background: rgba(148,163,184,.14); color: var(--muted); font-weight: 700; font-size: 12px; }
-
-    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px dashed rgba(148,163,184,.18); }
-    th { color: var(--muted); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; }
-
-    .empty { text-align: center; color: var(--muted); padding: 16px 0; }
-
-    footer { margin-top: 22px; color: var(--muted); font-size: 12px; text-align: center; }
-    kbd { background: rgba(148,163,184,.18); border: 1px solid rgba(148,163,184,.35); border-bottom-width: 2px; border-radius: 6px; padding: 0 6px; font-weight: 700; }
-
-    .toast {
-      position: fixed; left: 50%; top: 18px; transform: translateX(-50%);
-      background: var(--panel); color: var(--text); border: 1px solid rgba(148,163,184,.26);
-      border-radius: 999px; padding: 10px 14px; box-shadow: var(--shadow); opacity: 0; pointer-events: none;
-      transition: opacity .25s ease, transform .25s ease; font-weight: 700;
-    }
-    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <header>
-      <div class="brand">
-        <div class="logo" aria-hidden="true">⏱️</div>
-        <div>
-          <div class="title">Study Buddy</div>
-          <div class="subtitle">Earn points for focused time.</div>
-        </div>
-      </div>
-      <div class="statline">
-        <div class="pill" id="totalPointsPill">Total Points: 0</div>
-        <div class="pill" id="totalTimePill">Total Time: 00:00:00</div>
-        <button class="btn ghost" id="exportCsvBtn" aria-label="Export session history as CSV">Export CSV</button>
-        <button class="btn ghost" id="resetAllBtn" aria-label="Reset all data">Reset All</button>
-      </div>
-    </header>
-
-    <div class="grid">
-      <!-- Left: Timer & Controls -->
-      <section class="card">
-        <div class="timer">
-          <div class="time" id="timeDisplay" aria-live="polite" aria-atomic="true">00:00:00</div>
-          <div class="points">
-            <div class="value" id="pointsDisplay">0</div>
-            <div class="label">points this session</div>
-          </div>
-          <div class="progress" aria-label="Progress toward session goal">
-            <div class="bar" id="progressBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
-          </div>
-          <div class="controls" style="margin-top: 8px;">
-            <button class="btn primary" id="startPauseBtn" aria-label="Start or pause timer"><span>Start</span></button>
-            <button class="btn" id="resetSessionBtn" aria-label="Reset current session">Reset Session</button>
-            <button class="btn success" id="logSessionBtn" aria-label="Complete session and add to history">Complete Session</button>
-          </div>
-          <div class="settings-row">
-            <label for="goalMins">Goal (minutes)</label>
-            <input type="number" id="goalMins" min="5" max="240" step="5" value="25" />
-            <label for="pointsRate">Points per minute</label>
-            <select id="pointsRate">
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="5">5</option>
-            </select>
-            <span class="subtitle">Shortcuts: <kbd>Space</kbd> start/pause • <kbd>R</kbd> reset • <kbd>L</kbd> complete</span>
-          </div>
-        </div>
-        <div class="inner">
-          <h2>Tips for focus</h2>
-          <ul style="margin: 0 0 6px 18px; color: var(--muted)">
-            <li>Set a realistic goal (e.g., 25 minutes Pomodoro).</li>
-            <li>Silence notifications and close extra tabs.</li>
-            <li>When distracted, jot it down and return after the session.</li>
-          </ul>
-        </div>
-      </section>
-
-      <!-- Right: History -->
-      <section class="card">
-        <div class="inner">
-          <h2>Session History</h2>
-          <div id="historyWrap">
-            <table id="historyTable" aria-describedby="historyEmpty">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Duration</th>
-                  <th>Points</th>
-                  <th>Goal</th>
-                </tr>
-              </thead>
-              <tbody id="historyBody"></tbody>
-            </table>
-            <div id="historyEmpty" class="empty">No sessions yet. Complete a session to see it here.</div>
-          </div>
-        </div>
-      </section>
-    </div>
-
-    <footer>
-      Built with ❤️ for focused learning. Your data is stored locally in your browser.
-    </footer>
-  </div>
-
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
-  <script>
-    (function(){
-      const timeDisplay = document.getElementById('timeDisplay');
-      const pointsDisplay = document.getElementById('pointsDisplay');
-      const progressBar = document.getElementById('progressBar');
-      const startPauseBtn = document.getElementById('startPauseBtn');
-      const resetSessionBtn = document.getElementById('resetSessionBtn');
-      const logSessionBtn = document.getElementById('logSessionBtn');
-      const goalMinsInput = document.getElementById('goalMins');
-      const pointsRateSelect = document.getElementById('pointsRate');
-      const totalPointsPill = document.getElementById('totalPointsPill');
-      const totalTimePill = document.getElementById('totalTimePill');
-      const historyBody = document.getElementById('historyBody');
-      const historyEmpty = document.getElementById('historyEmpty');
-      const exportCsvBtn = document.getElementById('exportCsvBtn');
-      const resetAllBtn = document.getElementById('resetAllBtn');
-      const toast = document.getElementById('toast');
-
-      // State
-      let running = false;
-      let startTs = 0;          // timestamp when started (ms)
-      let elapsedMs = 0;        // accumulated elapsed this session when paused (ms)
-      let rafId = null;
-
-      const LS_KEYS = {
-        totalSeconds: 'sb_total_seconds',
-        totalPoints: 'sb_total_points',
-        sessions: 'sb_sessions',
-        goalMins: 'sb_goal_mins',
-        rate: 'sb_points_rate'
-      };
-
-      function loadNumber(key, fallback = 0) {
-        const v = Number(localStorage.getItem(key));
-        return Number.isFinite(v) && v >= 0 ? v : fallback;
-      }
-      function loadJSON(key, fallback = []) {
-        try { return JSON.parse(localStorage.getItem(key) || ''); } catch { return fallback; }
-      }
-
-      let totalSeconds = loadNumber(LS_KEYS.totalSeconds, 0);
-      let totalPoints = loadNumber(LS_KEYS.totalPoints, 0);
-      let sessions = loadJSON(LS_KEYS.sessions, []);
-
-      // Init settings
-      const savedGoal = loadNumber(LS_KEYS.goalMins, 25);
-      goalMinsInput.value = Math.min(Math.max(savedGoal, 5), 240);
-      const savedRate = loadNumber(LS_KEYS.rate, 1);
-      pointsRateSelect.value = String([1,2,5].includes(savedRate) ? savedRate : 1);
-
-      // Helpers
-      function fmtHMS(totalSeconds) {
-        const h = Math.floor(totalSeconds/3600).toString().padStart(2,'0');
-        const m = Math.floor((totalSeconds%3600)/60).toString().padStart(2,'0');
-        const s = Math.floor(totalSeconds%60).toString().padStart(2,'0');
-        return `${h}:${m}:${s}`;
-      }
-      function showToast(msg) {
-        toast.textContent = msg;
-        toast.classList.add('show');
-        clearTimeout(showToast._t);
-        showToast._t = setTimeout(() => toast.classList.remove('show'), 1700);
-      }
-
-      function updatePills() {
-        totalPointsPill.textContent = `Total Points: ${Math.floor(totalPoints)}`;
-        totalTimePill.textContent = `Total Time: ${fmtHMS(totalSeconds)}`;
-      }
-
-      function renderHistory() {
-        historyBody.innerHTML = '';
-        if (!sessions.length) {
-          historyEmpty.style.display = 'block';
-          return;
-        }
-        historyEmpty.style.display = 'none';
-        for (const s of sessions.slice().reverse()) {
-          const tr = document.createElement('tr');
-          const date = new Date(s.ts);
-          const dur = fmtHMS(Math.round(s.seconds));
-          tr.innerHTML = `
-            <td>${date.toLocaleString()}</td>
-            <td>${dur}</td>
-            <td>${Math.floor(s.points)}</td>
-            <td>${s.goal} min</td>
-          `;
-          historyBody.appendChild(tr);
-        }
-      }
-
-      function tick() {
-        const now = performance.now();
-        const sessionMs = (running ? (elapsedMs + (now - startTs)) : elapsedMs);
-        const seconds = sessionMs / 1000;
-
-        // Display time
-        timeDisplay.textContent = fmtHMS(seconds);
-
-        // Points this session (live, not yet committed)
-        const rate = Number(pointsRateSelect.value);
-        const sessionPoints = seconds * (rate / 60);
-        pointsDisplay.textContent = Math.floor(sessionPoints);
-
-        // Progress toward goal
-        const goalSeconds = Math.max(300, Math.min(14400, Number(goalMinsInput.value) * 60));
-        const pct = Math.min(100, (seconds / goalSeconds) * 100);
-        progressBar.style.width = `${pct}%`;
-        progressBar.setAttribute('aria-valuenow', pct.toFixed(0));
-
-        rafId = requestAnimationFrame(tick);
-      }
-
-      function start() {
-        if (running) return;
-        running = true;
-        startTs = performance.now();
-        startPauseBtn.firstElementChild.textContent = 'Pause';
-        tick();
-      }
-
-      function pause() {
-        if (!running) return;
-        running = false;
-        cancelAnimationFrame(rafId);
-        const now = performance.now();
-        elapsedMs += (now - startTs);
-        startPauseBtn.firstElementChild.textContent = 'Resume';
-      }
-
-      function resetSession() {
-        running = false;
-        cancelAnimationFrame(rafId);
-        elapsedMs = 0;
-        startPauseBtn.firstElementChild.textContent = 'Start';
-        tick();
-      }
-
-      function completeSession() {
-        // Freeze time and compute deltas
-        if (running) pause();
-        const seconds = Math.floor(elapsedMs / 1000);
-        if (seconds < 5) { showToast('Session too short to log.'); return; }
-        const rate = Number(pointsRateSelect.value);
-        const pts = seconds * (rate / 60);
-        const goal = Number(goalMinsInput.value);
-
-        // Persist totals
-        totalSeconds += seconds;
-        totalPoints += pts;
-        localStorage.setItem(LS_KEYS.totalSeconds, String(totalSeconds));
-        localStorage.setItem(LS_KEYS.totalPoints, String(totalPoints));
-
-        // Push history item
-        const item = { ts: Date.now(), seconds, points: pts, goal };
-        sessions.push(item);
-        // keep most recent 500 sessions to bound storage
-        if (sessions.length > 500) sessions = sessions.slice(-500);
-        localStorage.setItem(LS_KEYS.sessions, JSON.stringify(sessions));
-
-        // UI refresh
-        updatePills();
-        renderHistory();
-
-        // Feedback
-        const minAchieved = Math.round(seconds/60);
-        const badge = minAchieved >= goal ? '🏅 Goal met!' : (minAchieved >= Math.max(10, Math.round(goal/2)) ? '🎯 Nice streak!' : '✅ Logged');
-        showToast(`${badge} +${Math.floor(pts)} pts`);
-
-        // Reset session
-        resetSession();
-      }
-
-      function exportCSV() {
-        const header = ['Date','Duration (HH:MM:SS)','Seconds','Points','Goal (min)'];
-        const rows = sessions.map(s => {
-          const d = new Date(s.ts);
-          const durFmt = fmtHMS(Math.round(s.seconds));
-          return [d.toISOString(), durFmt, Math.round(s.seconds), Math.floor(s.points), s.goal];
-        });
-        const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'study-buddy-sessions.csv'; a.click();
-        URL.revokeObjectURL(url);
-      }
-
-      function resetAll() {
-        if (!confirm('Reset ALL totals and history? This cannot be undone.')) return;
-        totalSeconds = 0; totalPoints = 0; sessions = [];
-        localStorage.removeItem(LS_KEYS.totalSeconds);
-        localStorage.removeItem(LS_KEYS.totalPoints);
-        localStorage.removeItem(LS_KEYS.sessions);
-        updatePills(); renderHistory(); resetSession();
-        showToast('All data cleared.');
-      }
-
-      // Bind events
-      startPauseBtn.addEventListener('click', () => running ? pause() : start());
-      resetSessionBtn.addEventListener('click', resetSession);
-      logSessionBtn.addEventListener('click', completeSession);
-      exportCsvBtn.addEventListener('click', exportCSV);
-      resetAllBtn.addEventListener('click', resetAll);
-
-      goalMinsInput.addEventListener('change', () => {
-        const v = Math.min(Math.max(Number(goalMinsInput.value)||25, 5), 240);
-        goalMinsInput.value = v;
-        localStorage.setItem(LS_KEYS.goalMins, String(v));
-      });
-      pointsRateSelect.addEventListener('change', () => {
-        localStorage.setItem(LS_KEYS.rate, String(pointsRateSelect.value));
-      });
-
-      // Keyboard shortcuts
-      document.addEventListener('keydown', (e) => {
-        if (e.target.matches('input, textarea')) return; // ignore focused inputs
-        if (e.code === 'Space') { e.preventDefault(); running ? pause() : start(); }
-        else if (e.key.toLowerCase() === 'r') { e.preventDefault(); resetSession(); }
-        else if (e.key.toLowerCase() === 'l') { e.preventDefault(); completeSession(); }
-      });
-
-      // First paint
-      updatePills();
-      renderHistory();
-      tick();
-    })();
-  </script>
-</body>
-</html>
+  // Outline generator for non-math
+  const topic = text[0].toUpperCase()+text.slice(1);
+  const outline = [
+    `Clarify the question and key terms for: ${topic}`,
+    'List 3–5 main points you will cover',
+    'Find 2–3 credible sources (textbook/notes/class slides)',
+    'Draft concise answer with evidence/examples',
+    'Review, cite, and proofread'
+  ];
+  qsOutput.innerHTML = `<div class="cardlet"><strong>Study Outline:</strong><ul style="margin:8px 0 0 20px;">${outline.map(i=>`<li>${i}</li>`).join('')}</ul></div>`;
+});
