@@ -7,17 +7,17 @@
   <meta name="description" content="A simple, motivating study timer that awards points for time spent studying." />
   <style>
     :root {
-      --bg: #f6f5f2;          /* warm off-white */
-      --panel: #ffffff;       /* white card */
-      --panel-2: #eef0ea;     /* soft gray-green */
-      --text: #1f2937;        /* slate-800 */
-      --muted: #64748b;       /* slate-500 */
-      --accent: #2e7d32;      /* natural green */
-      --accent-2: #84cc16;    /* lime support */
-      --success: #4d7c0f;     /* olive */
-      --warn: #ca8a04;        /* golden */
-      --danger: #b91c1c;      /* red */
-      --shadow: 0 8px 24px rgba(15, 23, 42, .06);
+      --bg: #0f172a;          /* slate-900 */
+      --panel: #111827;       /* gray-900 */
+      --panel-2: #0b1220;     /* deep shade */
+      --text: #e5e7eb;        /* gray-200 */
+      --muted: #9ca3af;       /* gray-400 */
+      --accent: #6366f1;      /* indigo-500 */
+      --accent-2: #22d3ee;    /* cyan-400 */
+      --success: #10b981;     /* emerald-500 */
+      --warn: #f59e0b;        /* amber-500 */
+      --danger: #ef4444;      /* red-500 */
+      --shadow: 0 10px 25px rgba(0,0,0,.35);
       --radius: 16px;
     }
 
@@ -70,7 +70,7 @@
     .timer {
       display: grid; grid-template-columns: 1fr; align-items: center;
       text-align: center; gap: 14px; padding: 22px 18px 26px;
-      background: linear-gradient(180deg, rgba(46,125,50,.08), transparent 60%);
+      background: linear-gradient(180deg, rgba(99,102,241,.12), transparent 60%);
     }
     .time {
       font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: .5px;
@@ -82,8 +82,8 @@
 
     .controls { display:flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
     .btn {
-      border: 1px solid rgba(100,116,139,.25); border-radius: 999px; padding: 10px 16px; font-weight: 700; cursor: pointer;
-      background: transparent; color: var(--text);
+      border: 0; border-radius: 999px; padding: 10px 16px; font-weight: 700; cursor: pointer;
+      background: #111827; color: var(--text); border: 1px solid rgba(148,163,184,.16);
       transition: transform .06s ease, background .2s ease, border-color .2s ease; user-select: none;
     }
     .btn:hover { transform: translateY(-1px); }
@@ -99,12 +99,12 @@
     .bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .2s linear; }
 
     .settings-row { display:flex; gap: 10px; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; }
-    select, input[type="number"] {
+    select, input[type="number"], input[type="text"], input[type="datetime-local"], textarea {
       background: #0b1220; color: var(--text); border: 1px solid rgba(148,163,184,.22);
       border-radius: 10px; padding: 8px 10px;
     }
     @media (prefers-color-scheme: light) {
-      select, input[type="number"] { background: #fff; }
+      select, input[type="number"], input[type="text"], input[type="datetime-local"], textarea { background: #fff; }
     }
 
     /* Right column */
@@ -127,18 +127,19 @@
       transition: opacity .25s ease, transform .25s ease; font-weight: 700;
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* Study Help styling */
     .tabs .btn[aria-selected="true"] { background: linear-gradient(180deg, var(--accent), #4f46e5); color:white; border-color: transparent; }
-  .cardlet { background: var(--panel); padding:10px; border-radius:12px; border:1px solid rgba(148,163,184,.16); }
-  .flashcard { border:1px solid rgba(148,163,184,.2); border-radius:12px; padding:10px; background: var(--panel); display:flex; flex-direction:column; gap:8px; }
-  .flashcard textarea { width:100%; background:#0b1220; color:var(--text); border:1px solid rgba(148,163,184,.22); border-radius:10px; padding:8px; height:88px; }
-  @media (prefers-color-scheme: light) { .flashcard textarea { background:#fff; } }
-$1
+    .cardlet { background: var(--panel); padding:10px; border-radius:12px; border:1px solid rgba(148,163,184,.16); }
+    .flashcard { border:1px solid rgba(148,163,184,.2); border-radius:12px; padding:10px; background: var(--panel); display:flex; flex-direction:column; gap:8px; }
+    .flashcard textarea { width:100%; height:88px; }
+  </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <div class="brand">
-        $1🦉$3
+        <div class="logo" aria-hidden="true">🦉</div>
         <div>
           <div class="title">Study Buddy</div>
           <div class="subtitle">Earn points for focused time.</div>
@@ -147,6 +148,8 @@ $1
       <div class="statline">
         <div class="pill" id="totalPointsPill">Total Points: 0</div>
         <div class="pill" id="totalTimePill">Total Time: 00:00:00</div>
+        <button class="btn ghost" id="exportCsvBtn" aria-label="Export session history as CSV">Export CSV</button>
+        <button class="btn ghost" id="resetAllBtn" aria-label="Reset all data">Reset All</button>
       </div>
     </header>
 
@@ -164,6 +167,7 @@ $1
           </div>
           <div class="controls" style="margin-top: 8px;">
             <button class="btn primary" id="startPauseBtn" aria-label="Start or pause timer"><span>Start</span></button>
+            <button class="btn" id="resetSessionBtn" aria-label="Reset current session">Reset Session</button>
             <button class="btn success" id="logSessionBtn" aria-label="Complete session and add to history">Complete Session</button>
           </div>
           <div class="settings-row">
@@ -175,7 +179,7 @@ $1
               <option value="2">2</option>
               <option value="5">5</option>
             </select>
-            <span class="subtitle">Shortcuts: <kbd>Space</kbd> start/pause • <kbd>L</kbd> complete</span>
+            <span class="subtitle">Shortcuts: <kbd>Space</kbd> start/pause • <kbd>R</kbd> reset • <kbd>L</kbd> complete</span>
           </div>
         </div>
         <div class="inner">
@@ -207,6 +211,8 @@ $1
             <div id="historyEmpty" class="empty">No sessions yet. Complete a session to see it here.</div>
           </div>
         </div>
+      </section>
+    </div>
 
     <!-- Study Help Card -->
     <section class="card" style="margin-top:18px;">
@@ -232,15 +238,16 @@ $1
               <input type="number" id="planMinutes" min="15" step="5" value="60" />
               <button class="btn primary" id="makePlanBtn">Create Plan</button>
             </div>
-            <textarea id="planDesc" placeholder="Describe the assignment (what to deliver, chapters, constraints)…" rows="3" style="width:100%; margin-top:10px; background:#0b1220; color:var(--text); border:1px solid rgba(148,163,184,.22); border-radius:10px; padding:10px;"></textarea>
+            <textarea id="planDesc" placeholder="Describe the assignment (what to deliver, chapters, constraints)…" rows="3" style="width:100%; margin-top:10px;"></textarea>
             <ol id="planOutput" style="margin-top:12px; padding-left:22px;"></ol>
           </div>
 
           <!-- Flashcards Panel -->
           <div class="panel" id="panel-flashcards" role="tabpanel" hidden>
-            <textarea id="fcInput" placeholder="Paste notes here. Each sentence will become a card. Use :: to mark Q::A pairs if you have them." rows="6" style="width:100%; background:#0b1220; color:var(--text); border:1px solid rgba(148,163,184,.22); border-radius:10px; padding:10px;"></textarea>
+            <textarea id="fcInput" placeholder="Paste notes here. Each sentence will become a card. Use :: to mark Q::A pairs if you have them." rows="6" style="width:100%;"></textarea>
             <div class="controls" style="justify-content:flex-start; margin-top:10px;">
               <button class="btn primary" id="genCardsBtn">Generate Flashcards</button>
+              <button class="btn" id="downloadCardsBtn">Download .csv</button>
             </div>
             <div id="cardsWrap" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:10px; margin-top:12px;"></div>
           </div>
@@ -258,7 +265,7 @@ $1
       </div>
     </section>
 
-    $1
+    <footer>
       Built with ❤️ for focused learning. Your data is stored locally in your browser.
     </footer>
   </div>
@@ -271,6 +278,7 @@ $1
       const pointsDisplay = document.getElementById('pointsDisplay');
       const progressBar = document.getElementById('progressBar');
       const startPauseBtn = document.getElementById('startPauseBtn');
+      const resetSessionBtn = document.getElementById('resetSessionBtn');
       const logSessionBtn = document.getElementById('logSessionBtn');
       const goalMinsInput = document.getElementById('goalMins');
       const pointsRateSelect = document.getElementById('pointsRate');
@@ -278,6 +286,8 @@ $1
       const totalTimePill = document.getElementById('totalTimePill');
       const historyBody = document.getElementById('historyBody');
       const historyEmpty = document.getElementById('historyEmpty');
+      const exportCsvBtn = document.getElementById('exportCsvBtn');
+      const resetAllBtn = document.getElementById('resetAllBtn');
       const toast = document.getElementById('toast');
 
       // State
@@ -417,8 +427,7 @@ $1
         // Push history item
         const item = { ts: Date.now(), seconds, points: pts, goal };
         sessions.push(item);
-        // keep most recent 500 sessions to bound storage
-        if (sessions.length > 500) sessions = sessions.slice(-500);
+        if (sessions.length > 500) sessions = sessions.slice(-500); // keep last 500
         localStorage.setItem(LS_KEYS.sessions, JSON.stringify(sessions));
 
         // UI refresh
@@ -461,7 +470,10 @@ $1
 
       // Bind events
       startPauseBtn.addEventListener('click', () => running ? pause() : start());
+      resetSessionBtn.addEventListener('click', resetSession);
       logSessionBtn.addEventListener('click', completeSession);
+      exportCsvBtn.addEventListener('click', exportCSV);
+      resetAllBtn.addEventListener('click', resetAll);
 
       goalMinsInput.addEventListener('change', () => {
         const v = Math.min(Math.max(Number(goalMinsInput.value)||25, 5), 240);
@@ -476,6 +488,7 @@ $1
       document.addEventListener('keydown', (e) => {
         if (e.target.matches('input, textarea')) return; // ignore focused inputs
         if (e.code === 'Space') { e.preventDefault(); running ? pause() : start(); }
+        else if (e.key.toLowerCase() === 'r') { e.preventDefault(); resetSession(); }
         else if (e.key.toLowerCase() === 'l') { e.preventDefault(); completeSession(); }
       });
 
@@ -483,6 +496,158 @@ $1
       updatePills();
       renderHistory();
       tick();
+
+      // --- Study Help Logic ---
+      const tabButtons = document.querySelectorAll('.tabs .btn');
+      const panels = {
+        plan: document.getElementById('panel-plan'),
+        flashcards: document.getElementById('panel-flashcards'),
+        quicksolve: document.getElementById('panel-quicksolve')
+      };
+      tabButtons.forEach(btn => btn.addEventListener('click', () => {
+        const tab = btn.getAttribute('data-tab');
+        tabButtons.forEach(b => b.setAttribute('aria-selected', String(b===btn)));
+        Object.entries(panels).forEach(([k,el]) => el.hidden = (k!==tab));
+      }));
+
+      // Planner
+      const makePlanBtn = document.getElementById('makePlanBtn');
+      const planOutput = document.getElementById('planOutput');
+      makePlanBtn?.addEventListener('click', () => {
+        const subj = document.getElementById('planSubject').value.trim() || 'Study';
+        const due = document.getElementById('planDue').value;
+        const minutes = Math.max(15, Number(document.getElementById('planMinutes').value)||60);
+        const desc = document.getElementById('planDesc').value.trim();
+
+        const phases = [
+          ['Understand the task', .15],
+          ['Gather sources / examples', .2],
+          ['Outline key points', .2],
+          ['Draft / Solve', .3],
+          ['Review & polish', .1],
+          ['Submit / backup files', .05]
+        ];
+        const items = phases.map(([label, frac]) => {
+          const mins = Math.max(5, Math.round(minutes*frac));
+          return { label, mins };
+        });
+        planOutput.innerHTML = '';
+        const dueTxt = due ? ` (due ${new Date(due).toLocaleString()})` : '';
+        const header = document.createElement('li');
+        header.innerHTML = `<strong>${subj}${dueTxt}</strong>${desc?': '+desc:''}`;
+        planOutput.appendChild(header);
+        for (const it of items) {
+          const li = document.createElement('li');
+          li.innerHTML = `${it.label} — <strong>${it.mins} min</strong>`;
+          planOutput.appendChild(li);
+        }
+        showToast('Plan created. You got this! 🦉');
+      });
+
+      // Flashcards
+      const genCardsBtn = document.getElementById('genCardsBtn');
+      const downloadCardsBtn = document.getElementById('downloadCardsBtn');
+      const cardsWrap = document.getElementById('cardsWrap');
+
+      function sentenceSplit(text){
+        return text
+          .replace(/\n+/g,' ')
+          .split(/(?<=[.!?])\s+/)
+          .map(s => s.trim())
+          .filter(Boolean);
+      }
+      function toCloze(sentence){
+        const words = sentence.match(/\b[\p{L}]{4,}\b/gu) || [];
+        const key = words.sort((a,b)=>b.length-a.length)[0] || null;
+        if (!key) return {q: sentence, a: ''};
+        const re = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i');
+        return { q: sentence.replace(re,'_____'), a: key };
+      }
+
+      genCardsBtn?.addEventListener('click', () => {
+        const raw = document.getElementById('fcInput').value.trim();
+        cardsWrap.innerHTML='';
+        if (!raw) { showToast('Paste notes to make cards.'); return; }
+        const lines = raw.split(/\n/).map(l=>l.trim()).filter(Boolean);
+        const pairs = [];
+        for (const line of lines) {
+          if (line.includes('::')) {
+            const [q,a] = line.split('::');
+            if (q && a) pairs.push({q:q.trim(), a:a.trim()});
+            continue;
+          }
+          for (const s of sentenceSplit(line)) pairs.push(toCloze(s));
+        }
+        for (const p of pairs.slice(0,200)) {
+          const card = document.createElement('div');
+          card.className = 'flashcard';
+          card.innerHTML = `
+            <strong>Front</strong>
+            <textarea>${p.q}</textarea>
+            <strong>Back</strong>
+            <textarea>${p.a}</textarea>
+          `;
+          cardsWrap.appendChild(card);
+        }
+        showToast(`Made ${pairs.length} cards.`);
+      });
+
+      downloadCardsBtn?.addEventListener('click', () => {
+        const cards = [...cardsWrap.querySelectorAll('.flashcard')].map(card => {
+          const t = card.querySelectorAll('textarea');
+          return { q: t[0].value, a: t[1].value };
+        });
+        if (!cards.length) { showToast('No cards to download.'); return; }
+        const header = ['Front','Back'];
+        const rows = cards.map(c => [c.q, c.a]);
+        const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'study-buddy-flashcards.csv'; a.click();
+        URL.revokeObjectURL(url);
+      });
+
+      // Quick Solve
+      const qsRunBtn = document.getElementById('qsRunBtn');
+      const qsOutput = document.getElementById('qsOutput');
+
+      function isSafeExpression(str){
+        return /^[0-9+\-*/().^%\s]+$/.test(str);
+      }
+      function evalMath(expr){
+        const safe = expr.replace(/\^/g,'**');
+        return Function('"use strict"; return ('+safe+');')();
+      }
+
+      qsRunBtn?.addEventListener('click', () => {
+        const text = document.getElementById('qsProblem').value.trim();
+        if (!text) { showToast('Type a problem or task.'); return; }
+
+        if (isSafeExpression(text)) {
+          try {
+            const result = evalMath(text);
+            qsOutput.innerHTML = `<div class="cardlet"><strong>Result:</strong> ${result}</div>
+            <div class="cardlet" style="margin-top:8px"><strong>Steps (tips):</strong><br/>• Expand parentheses first<br/>• Exponents next<br/>• Multiply/Divide left to right<br/>• Add/Subtract last</div>`;
+          } catch(e){
+            qsOutput.textContent = 'Could not evaluate expression.';
+          }
+          return;
+        }
+
+        const topic = text[0].toUpperCase()+text.slice(1);
+        const outline = [
+          \`Clarify the question and key terms for: \${topic}\`,
+          'List 3–5 main points you will cover',
+          'Find 2–3 credible sources (textbook/notes/class slides)',
+          'Draft concise answer with evidence/examples',
+          'Review, cite, and proofread'
+        ];
+        qsOutput.innerHTML = `<div class="cardlet"><strong>Study Outline:</strong><ul style="margin:8px 0 0 20px;">${outline.map(i=>`<li>${i}</li>`).join('')}</ul></div>`;
+      });
+
+      // Boot
+      updatePills(); renderHistory(); tick();
     })();
   </script>
 </body>
